@@ -1,0 +1,100 @@
+QWidget {
+    background-color: #f5f5f5;
+}
+#card{
+    
+}
+#centerTitle{
+    font-size: 18px;
+    font-weight:bold;
+    width:100px;
+
+}
+#CustomButton {
+    background-color: #679cff;
+    color: white;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 3px;
+    font-size: 14px;
+}
+QLineEdit{
+    /* background-color: #679cff; */
+    color: black;
+    padding: 10px 15px;
+    border: 1px solid  #dadada;
+    border-radius: 3px;
+    font-size: 14px;
+}
+QLineEdit:focus{
+    border: 1px solid  #679cff;
+
+}
+#Item{
+    color: black;
+    padding: 10px 15px;
+    margin:0px;
+    border-radius: 3px;
+    font-size: 16px;
+    font-weight:bold;
+
+    
+}
+#WillayaPill{
+    color: black;
+    padding: 10px 15px;
+    background-color: #d3d4d6;
+    border-radius: 100px;
+    font-size: 14px;
+    font-weight:bold;
+}
+
+#Instructions{
+    background-color: transparent;
+    padding-right: 100px;
+}
+
+
+    QComboBox {
+        background-color: white;
+        color: #171717;
+        border: 1px solid #CBD5E1;
+        border-radius: 6px;
+        padding: 8px 12px;
+        min-height: 20px;
+     font-size:16px;
+    }       
+
+
+    QComboBox:hover {
+        border-color: #94A3B8;
+    }
+
+    QComboBox:focus {
+        border: 2px solid #91aefd;
+    }
+
+    QComboBox::drop-down {
+        border: none;
+        width: 10px;
+    }
+
+    QComboBox::down-arrow {
+        width: 10px;
+        height: 10px;
+    }
+
+    QComboBox QAbstractItemView {
+        
+        background-color: white;
+        color: #171717;
+        border: 1px solid #CBD5E1;
+        selection-background-color: #91aefd;
+        selection-color: white;
+        padding-top: 5px;
+        padding-bottom: 5px;
+    }
+
+QLable{
+    background-color: white;
+}

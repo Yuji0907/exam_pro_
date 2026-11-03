@@ -1,0 +1,82 @@
+
+
+QLable{
+    
+    background: white;
+}
+/* QWidget{
+    background-color: white;
+
+} */
+#Card{
+    background-color: white;
+    border-radius: 10px;
+    /* box-shadow: inset 0 0 10px rgba(0, 0, 0, 0.1); */
+    /* padding: 80%; */
+}
+#Container{
+    background-color: white;
+
+}
+
+#SideBarTitle{
+    font-size : 24px;
+    font-weight : bold;
+    color:#2b63fc;
+    background-color: white;
+    padding:50px;
+    padding-bottom:10px;
+    
+}
+#Packets{
+    font-size : 14px;
+    font-weight : bold;
+    /* padding:10px; */
+}
+#Link{
+    font-size : 14px;
+    /* font-weight : bold; */
+    text-decoration: underline;
+    color:#000;
+    background-color: white;
+}
+#Message{
+    font-size : 16px;
+    font-weight : bold;
+    color:#ffc524;
+    background-color: white;
+    padding-top:10px;
+    padding-bottom:10px;
+    /* padding-top:10px; */
+
+}
+#W_error{
+    font-size : 15px;
+    font-weight : bold;
+    color:#ff2424;
+    background-color: white;
+    padding-top:10px;
+    padding-bottom:10px;
+    /* padding-top:10px; */
+
+    
+}
+#CheckIcon {
+    background: white;
+}
+#Button{
+    margin-top:20px;
+}
+#Checks{
+    background-color: white;
+    font-size : 16px;
+    
+}
+
+
+#ChekMessage{
+    color:green;
+    font-size : 18px;
+    background-color: white;
+
+}

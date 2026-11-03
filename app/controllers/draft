@@ -1,0 +1,73 @@
+ def check_file_number_integrity(
+        self,
+        file_number: int,
+        code_bar:str
+        ):
+
+        candidate = (
+            self.candidate_repo
+            .get_by_file_number(file_number)
+            )
+
+
+        if(candidate is not None):
+            new_record  = self.code_format_repo.get_by_code_bar(code_bar=code_bar)
+            print(candidate.willaya_id,new_record.willaya_id)
+            if not(candidate.willaya_id == new_record.willaya_id ):
+                self.status = "forbiden"
+                self.view.display_candidate(
+                candidate,"",self.status," willaya error"
+                                )
+                return
+            
+        code_exists = (
+            self.code_repo.get_by_file_number(file_number)
+        )
+        self.old_code_bar=""
+        packet_number = None
+        old_record = None
+        new_record = None
+        self.status = "allowed"
+
+        if(code_exists):
+            for code_ in code_exists:
+                print("already exists code bar")
+                print(code_.code)
+                print(code_.packet_number)
+                self.old_code_bar=code_.code
+                packet_number =code_.packet_number
+            old_record  = self.code_format_repo.get_by_code_bar(code_bar=code_.code)
+            new_record  = self.code_format_repo.get_by_code_bar(code_bar=code_bar)
+            
+
+                
+            if(
+                old_record.willaya_id==new_record.willaya_id and
+                old_record.subject_id==new_record.subject_id ):
+
+                self.status = "forbiden"
+            else:
+                self.status = "allowed"
+
+        # else:
+
+        #     self.status="allowed"
+        #     self.view.display_candidate(
+        #         candidate,self.old_code_bar,self.status,""
+        #                                 )
+        #     return
+
+        # if candidate is None:
+        #     print(f"No candidate found with file number " f"{file_number}")
+
+            
+        print( old_record.willaya_id,
+            old_record.subject_id,
+            packet_number)
+        packet_name = self.packet_repo.get_by_id(
+            old_record.willaya_id,
+            old_record.subject_id,packet_number).name
+        
+        self.view.display_candidate(
+            candidate,self.old_code_bar,self.status,packet_name
+        )
