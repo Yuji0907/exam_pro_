@@ -1,12 +1,18 @@
 from typing import Optional
  
-from sqlalchemy import select, delete as sa_delete
+from sqlalchemy import select,func, delete as sa_delete
 from sqlalchemy.orm import Session
  
+from database.orm_models import Grade as GradeORM 
 from database.orm_models import Center as CenterORM
+from database.orm_models import Willaya as WillayaORM
 from database.orm_models import CenterAssignment as CenterAssignmentORM
  
+from models.willaya_model import WillayaModel 
 from models.center_model import CenterModel, CenterAssignmentModel
+from models.center_assingment_model import Center_Assingn_model
+from models.center_view_model import Center_model as CenterViewModel
+
  
  
 # ======================================================
@@ -155,6 +161,7 @@ class CenterAssignmentRepository:
             existing.center_id = center_id
             self.session.flush()
             return self._to_model(existing)
+        print("======================create")
         return self.add(grade_id, willaya_id, center_id)
  
     # --------------------------------------------------
@@ -188,9 +195,70 @@ class CenterAssignmentRepository:
             return None
         return CenterModel(id=center.id, name=center.name)
  
-    def get_all(self) -> list[CenterAssignmentModel]:
-        assignments = self.session.scalars(select(CenterAssignmentORM)).all()
-        return [self._to_model(a) for a in assignments]
+    def get_all(self) -> list[Center_Assingn_model]:
+        stmt = (
+            select(
+                GradeORM.id.label("grade_id"),
+                GradeORM.name.label("grade_name"),
+                CenterORM.id.label("center_id"),
+                CenterORM.name.label("center_name"),
+                WillayaORM.id.label("willaya_id"),
+                WillayaORM.willaya.label("willaya_name"),
+            )
+            .select_from(GradeORM)
+            .outerjoin(
+                CenterAssignmentORM,
+                CenterAssignmentORM.grade_id == GradeORM.id,
+            )
+            .outerjoin(
+                CenterORM,
+                CenterORM.id == CenterAssignmentORM.center_id,
+            )
+            .outerjoin(
+                WillayaORM,
+                WillayaORM.id == CenterAssignmentORM.willaya_id,
+            )
+            .order_by(GradeORM.id, CenterORM.name, WillayaORM.willaya)
+        )
+        rows = self.session.execute(stmt).all()
+
+        grades: dict[int, Center_Assingn_model] = {}
+        centers: dict[tuple[int, int], CenterViewModel] = {}  # (grade_id, center_id)
+
+        for row in rows:
+            grade_model = grades.get(row.grade_id)
+            if grade_model is None:
+                grade_model = Center_Assingn_model(
+                    id=row.grade_id,
+                    grade=row.grade_name,
+                    centers=[],
+                    current_center=0,
+                )
+                grades[row.grade_id] = grade_model
+
+            if row.center_id is None:  # grade with no assignment yet
+                continue
+
+            key = (row.grade_id, row.center_id)
+            center_model = centers.get(key)
+            if center_model is None:
+                center_model = CenterViewModel(
+                    id=row.center_id,
+                    center=row.center_name,
+                    willayas=[],
+                )
+                centers[key] = center_model
+                grade_model.centers.append(center_model)
+
+            if row.willaya_id is not None:
+                center_model.willayas.append(WillayaModel(id=row.willaya_id,willaya=row.willaya_name))
+
+        # default current_center to the first center of each grade
+        for grade_model in grades.values():
+            if grade_model.centers:
+                grade_model._current_center = grade_model.centers[0].id
+
+        return list(grades.values())
  
     def get_by_center(self, center_id: int) -> list[CenterAssignmentModel]:
         stmt = select(CenterAssignmentORM).where(

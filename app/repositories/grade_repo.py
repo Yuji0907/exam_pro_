@@ -38,10 +38,14 @@ class GradeRepository:
     # --------------------------------------------------
 
     def add(self, name: str) -> GradeModel:
-        grade = GradeORM(name=name)
+        exists= self.exists_by_name(name=name)
+        if(exists):
+            return self.get_by_name(name=name),exists
+        grade = GradeORM(name=name) 
         self.session.add(grade)
         self.session.flush()  # populates grade.id without committing
-        return self._to_model(grade)
+        self.session.commit()
+        return self._to_model(grade),False
 
     # --------------------------------------------------
     # Read
@@ -63,6 +67,8 @@ class GradeRepository:
     def get_all(self) -> list[GradeModel]:
         stmt = select(GradeORM).order_by(GradeORM.name)
         grades = self.session.scalars(stmt).all()
+        print("query ====")
+        print(grades)
         return [self._to_model(grade) for grade in grades]
 
     # --------------------------------------------------

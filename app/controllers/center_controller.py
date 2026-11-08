@@ -3,6 +3,7 @@ from sqlalchemy.orm import Session
 
 from repositories.center_repos import CenterRepository, CenterAssignmentRepository
 from models.center_model import CenterModel, CenterAssignmentModel
+from models.center_assingment_model import Center_Assingn_model
 
 
 class CenterController:
@@ -101,10 +102,7 @@ class CenterController:
 
             self.session.commit()
 
-            self.view.show_success(
-                f"Center created: "
-                f"{center.name}"
-            )
+
 
             self.load_centers()
 
@@ -219,12 +217,12 @@ class CenterController:
     # --------------------------------------------------
 
     def load_assignments(self):
+        assignment = self.assignment_repo.get_all()
+        print("sssss")
+        print(len(assignment))
+        return assignment
+        # print(assignments)
 
-        assignments = self.assignment_repo.get_all()
-
-        self.view.display_assignments(
-            assignments
-        )
 
     def load_assignments_by_center(
         self,
@@ -360,7 +358,7 @@ class CenterController:
                 "Assignment created."
             )
 
-            self.load_assignments()
+            # self.load_assignments()
 
         except Exception as e:
 
@@ -414,37 +412,41 @@ class CenterController:
     # Assign (create, or move if it already exists)
     # --------------------------------------------------
 
-    def assign_center(
-        self,
-        grade_id: int,
-        willaya_id: int,
-        center_id: int
-    ):
-
+    def assign_centers(self, center_assignment: Center_Assingn_model):
         try:
+            grade_id = center_assignment.id
 
-            self.assignment_repo.assign(
-                grade_id=grade_id,
-                willaya_id=willaya_id,
-                center_id=center_id
-            )
+            # desired state from the UI: {willaya_id: center_id}
+            desired: dict[int, int] = {}
+            for center in center_assignment.centers:
+                for willaya in center.willayas:
+                    desired[willaya.id] = center.id
+
+            # current state in the database: {willaya_id: center_id}
+            current: dict[int, int] = {
+                a.willaya_id: a.center_id
+                for a in self.assignment_repo.get_by_grade(grade_id)
+            }
+
+            # 1) remove records that are no longer in the new list
+            for willaya_id in current.keys() - desired.keys():
+                self.assignment_repo.delete(grade_id, willaya_id)
+
+            # 2) add new ones, and move the ones whose center changed
+            for willaya_id, center_id in desired.items():
+                if current.get(willaya_id) != center_id:
+                    self.assignment_repo.assign(
+                        grade_id=grade_id,
+                        willaya_id=willaya_id,
+                        center_id=center_id,
+                    )
 
             self.session.commit()
-
-            self.view.show_success(
-                "Center assigned."
-            )
-
             self.load_assignments()
 
         except Exception as e:
-
             self.session.rollback()
-
-            self.view.show_error(
-                str(e)
-            )
-
+            self.view.show_error(str(e))
     # --------------------------------------------------
     # Move every assignment from one center to another
     # --------------------------------------------------

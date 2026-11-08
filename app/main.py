@@ -11,8 +11,11 @@ from views.assign_code_view import CodeAssignmentView
 from views.candidate_view import CandidateView
 from views.subjects_view import SubjectsView
 from views.center_view import CenterView
+from views.grade_subject_view import GradeSubjectView
 from views.main_window import MainWindow 
 import os
+from pathlib import Path
+
 load_dotenv()
 database_connection_string = os.getenv("DB_CONNECTION_STRING")
 
@@ -25,7 +28,9 @@ if __name__ == "__main__":
     # db.create_all_tables()
 
     app = QApplication(sys.argv)
-
+    style_path = Path(__file__).parent / "styles" / "style.qss"
+    with open(style_path, "r", encoding="utf-8") as style_file:
+        app.setStyleSheet(style_file.read())
 
 
     
@@ -33,11 +38,11 @@ if __name__ == "__main__":
     # main_window_view.show() 
 
 
-    # code_format_view = CodeFormatView(session=session)
-    # code_format_view.show() 
+    code_format_view = CodeFormatView(session=session)
+    code_format_view.show() 
     # #    
-    # codeGen_view = CodeGenerator(session)
-    # codeGen_view.show()    
+    codeGen_view = CodeGenerator(session)
+    codeGen_view.show()    
 
     # eval_view = EvalView(session)
     # eval_view.show()   
@@ -56,6 +61,9 @@ if __name__ == "__main__":
 
     center_view = CenterView(session)
     center_view.show()
+
+    grade_subject_view = GradeSubjectView(session)
+    grade_subject_view.show()
     
 
     sys.exit(app.exec_())

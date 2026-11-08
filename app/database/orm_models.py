@@ -9,14 +9,14 @@ from sqlalchemy import (
     ForeignKeyConstraint,
     UniqueConstraint,
     Date
-)
+) 
 from sqlalchemy.orm import (
     declarative_base,
     mapped_column,
     Mapped,
     relationship,
 )
-
+ 
 Base = declarative_base()
 
 class Grade(Base):                      
@@ -205,12 +205,6 @@ class Code(Base):
         ForeignKeyConstraint(
             ["format_center_id", "format_subject_id", "packet_number"],
             ["packet.center_id", "packet.subject_id", "packet.number"],
-        ),
-        UniqueConstraint(
-            "format_grade_id",
-            "format_center_id",
-            "format_subject_id",
-            name="uq_codeformat_center_grade_subject"
         )
     )
 

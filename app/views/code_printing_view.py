@@ -1,36 +1,22 @@
 from PyQt5.QtWidgets import (
-    QWidget,
-    QComboBox,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QSpinBox,
-    QHeaderView
+    QWidget, QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QHBoxLayout, QLabel, QSpinBox, QHeaderView,
 )
-
 from sqlalchemy.orm import Session
 
 from controllers.code_controller import CodeController
-from controllers.willaya_controller import WillayaController
-from controllers.subject_controller import SubjectController
-
-from models.willaya_model import WillayaModel
-from models.subject_model import SubjectModel
 from models.code_model import CodeModel
 
 
 class CodeGenerator(QWidget):
-
     def __init__(self, session: Session):
         super().__init__()
+        self.grade_id = None
+        self.center_id = None
+        self.subject_id = None
 
-        self.wilaya_data = None
-        self.subject_data = None
-
-        self.wilaya_combo = QComboBox()
+        self.grade_combo = QComboBox()
+        self.center_combo = QComboBox()
         self.subject_combo = QComboBox()
 
         self.quantity_spin = QSpinBox()
@@ -40,187 +26,117 @@ class CodeGenerator(QWidget):
         self.setWindowTitle("code generator")
 
         self.table = QTableWidget()
-
-        # Controllers
-        self.code_controller = CodeController(
-            view=self,
-            session=session
-        )
-
-        self.willaya_controller = WillayaController(
-            view=self,
-            session=session
-        )
-
-        self.subject_controller = SubjectController(
-            view=self,
-            session=session
-        )
-
-        # Load data
-        self.willaya_controller.load_willayas()
-        self.subject_controller.load_subjects()
-
-        # Signals
-        self.wilaya_combo.currentIndexChanged.connect(
-            self.onWillayaChanged
-        )
-
-        self.subject_combo.currentIndexChanged.connect(
-            self.onSubjectChanged
-        )
-
-        # Table
         self.table.setColumnCount(1)
         self.table.setHorizontalHeaderLabels(["Code"])
-        self.table.horizontalHeader().setSectionResizeMode(
-            QHeaderView.Stretch
-        )
+        self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
 
-        # Button
+        self.message = QLabel("")
+        self.message.setObjectName("W_error")
+
         self.generate_button = QPushButton("Generate Codes")
-        self.generate_button.clicked.connect(
-            self.generate_code
-        )
-
+        self.generate_button.clicked.connect(self.generate_code)
         self.print_button = QPushButton("Print")
-        # Quantity layout
-        quantity_layout = QHBoxLayout()
 
-        quantity_layout.addWidget(
-            QLabel("Quantity")
-        )
-
-        quantity_layout.addWidget(
-            self.quantity_spin
-        )
-
-        # Combo layout
+        # Layouts
         combo_layout = QHBoxLayout()
+        combo_layout.addWidget(QLabel("Grade"))
+        combo_layout.addWidget(self.grade_combo)
+        combo_layout.addWidget(QLabel("Center"))
+        combo_layout.addWidget(self.center_combo)
+        combo_layout.addWidget(QLabel("Subject"))
+        combo_layout.addWidget(self.subject_combo)
 
-        combo_layout.addWidget(
-            QLabel("Wilaya")
-        )
+        quantity_layout = QHBoxLayout()
+        quantity_layout.addWidget(QLabel("Quantity"))
+        quantity_layout.addWidget(self.quantity_spin)
 
-        combo_layout.addWidget(
-            self.wilaya_combo
-        )
-
-        combo_layout.addWidget(
-            QLabel("Subject")
-        )
-
-        combo_layout.addWidget(
-            self.subject_combo
-        )
-
-        # Main layout
         layout = QVBoxLayout()
-
         layout.addLayout(combo_layout)
         layout.addLayout(quantity_layout)
-
+        layout.addWidget(self.message)
         layout.addWidget(self.table)
         layout.addWidget(self.generate_button)
         layout.addWidget(self.print_button)
-
         self.setLayout(layout)
+        self.setFixedSize(650, 500)
 
-        self.setFixedSize(500, 500)
+        # Controller + initial load (signals connected afterwards)
+        self.code_controller = CodeController(view=self, session=session)
+        self.code_controller.load_grades()
+        self.on_grade_changed(self.grade_combo.currentIndex())
 
-    # --------------------------------------------------
-    # Data loading
-    # --------------------------------------------------
+        self.grade_combo.currentIndexChanged.connect(self.on_grade_changed)
+        self.center_combo.currentIndexChanged.connect(self.on_selection_changed)
+        self.subject_combo.currentIndexChanged.connect(self.on_selection_changed)
 
-    def load_willayas(
-        self,
-        willayas: list[WillayaModel]
-    ):
-        self.wilaya_combo.clear()
+    # ---------------- combos ----------------
 
-        for willaya in willayas:
-            self.wilaya_combo.addItem(
-                willaya.willaya,
-                willaya.id
-            )
+    def _fill(self, combo: QComboBox, items):
+        combo.blockSignals(True)
+        combo.clear()
+        for item_id, label in items:
+            combo.addItem(label, item_id)
+        combo.blockSignals(False)
 
-        if self.wilaya_combo.count() > 0:
-            self.wilaya_data = self.wilaya_combo.itemData(0)
+    def load_grades(self, grades):
+        self._fill(self.grade_combo, grades)
 
-    def load_subjects(
-        self,
-        subjects: list[SubjectModel]
-    ):
-        self.subject_combo.clear()
+    def load_centers(self, centers):
+        self._fill(self.center_combo, centers)
 
-        for subject in subjects:
-            self.subject_combo.addItem(
-                subject.subject,
-                subject.id
-            )
+    def load_subjects(self, subjects):
+        self._fill(self.subject_combo, subjects)
 
-        if self.subject_combo.count() > 0:
-            self.subject_data = self.subject_combo.itemData(0)
+    def on_grade_changed(self, index):
+        self.grade_id = self.grade_combo.itemData(index)
+        if self.grade_id is None:
+            return
+        self.code_controller.load_centers(self.grade_id)
+        self.code_controller.load_subjects(self.grade_id)
+        self.on_selection_changed()
 
-    # --------------------------------------------------
-    # Selection
-    # --------------------------------------------------
-
-    def onWillayaChanged(self, index):
+    def on_selection_changed(self, _index=None):
         self.table.setRowCount(0)
-        self.wilaya_data = self.wilaya_combo.itemData(index)
+        self.clear_message()
+        self.center_id = self.center_combo.currentData()
+        self.subject_id = self.subject_combo.currentData()
 
-    def onSubjectChanged(self, index):
-        self.table.setRowCount(0)
-
-        self.subject_data = self.subject_combo.itemData(index)
-
-    # --------------------------------------------------
-    # Generate
-    # --------------------------------------------------
+    # ---------------- generate ----------------
 
     def generate_code(self):
-
-        if self.wilaya_data is None:
-            self.show_error("Please select a Wilaya.")
+        if self.grade_id is None:
+            self.show_error("Please select a Grade.")
             return
-
-        if self.subject_data is None:
+        if self.center_id is None:
+            self.show_error("Please select a Center.")
+            return
+        if self.subject_id is None:
             self.show_error("Please select a Subject.")
             return
 
-        quantity = self.quantity_spin.value()
-
         self.code_controller.generate_codes(
-            willaya_id=self.wilaya_data,
-            subject_id=self.subject_data,
-            quantity=quantity
+            center_id=self.center_id,
+            grade_id=self.grade_id,
+            subject_id=self.subject_id,
+            quantity=self.quantity_spin.value(),
         )
 
-    # --------------------------------------------------
-    # Display
-    # --------------------------------------------------
+    # ---------------- display ----------------
 
     def display_codes(self, codes: list[CodeModel]):
-
         self.table.setRowCount(0)
-
         for code in codes:
-
             row = self.table.rowCount()
-
             self.table.insertRow(row)
+            self.table.setItem(row, 0, QTableWidgetItem(str(code.code)))
 
-            self.table.setItem(
-                row,
-                0,
-                QTableWidgetItem(str(code.code))
-            )
+    # ---------------- messages ----------------
 
-    # --------------------------------------------------
-    # Error
-    # --------------------------------------------------
+    def clear_message(self):
+        self.message.setText("")
 
     def show_error(self, error):
+        self.message.setText(str(error))
 
-        print(error)
+    def show_success(self, text):
+        self.message.setText(str(text))

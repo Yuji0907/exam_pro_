@@ -1,117 +1,107 @@
-
+from sqlalchemy.orm import Session
 
 from repositories.code_format_repo import CodeFormatRepository
-from repositories.code_repo import CodeRepository
-from repositories.subject_repo import SubjectRepository
-from repositories.willaya_repo import WillayaRepository
-from sqlalchemy.orm import Session
-from models.code_format_model import CodeFormat as CodeFormatModel
+
 
 class CodeFormatController:
-    def __init__(self, view, session:Session):
+    def __init__(self, view, session: Session):
         self.view = view
+        self.session = session
         self.code_format_repo = CodeFormatRepository(session)
-        self.subject_repo = SubjectRepository(session)
-        self.willaya_repo = WillayaRepository (session)
-        self.code_format_repo = CodeFormatRepository(session)
-        self.code_repo = CodeRepository(session)
 
+    # ---------------- combos ----------------
 
-    def check_editable(self,code_format):
-        res = self.code_repo.get_by_codeformat(code_format)
-        return res
+    def load_grades(self):
+        self.view.load_grades(self.code_format_repo.get_grades())
 
+    def load_centers(self, grade_id: int):
+        self.view.load_centers(self.code_format_repo.get_centers_by_grade(grade_id))
 
+    def load_subjects(self, grade_id: int):
+        self.view.load_subjects(self.code_format_repo.get_subjects_by_grade(grade_id))
 
-    def load_code_formats(self):
-        code_formats = self.code_format_repo.get_all()
-        self.view.display_code_formats(code_formats)
+    # ---------------- code format ----------------
 
-    def load_code_format(self,willaya_id: int,subject_id: int):
-        code_format = self.code_format_repo.get_by_ids(willaya_id,subject_id)
+    def load_code_format(self, center_id: int, grade_id: int, subject_id: int):
+        code_format = self.code_format_repo.get_by_ids(center_id, grade_id, subject_id)
         if code_format:
             self.view.display_code_format(code_format)
         else:
-            self.view.show_error(f"No data found with id={willaya_id},{subject_id}")
-    
+            self.view.show_error(
+                f"No code format for center={center_id}, grade={grade_id}, subject={subject_id}"
+            )
+
+    def check_editable(self, center_id: int, grade_id: int, subject_id: int) -> bool:
+        """False once codes have been generated from this format."""
+        return not self.code_format_repo.has_codes(center_id, grade_id, subject_id)
+
     def assign_default(self):
-        subjects= self.subject_repo.get_all()
-        willays= self.willaya_repo.get_all()
-        for wilaya in willays:
-            for subject in subjects:
-                self.create_code_format(
-                    willaya_id=wilaya.id,
-                    subject_id=subject.id,
-                    willaya_format="",
-                    subject_format="",
-                    value_format=""
-                )
+        try:
+            self.code_format_repo.ensure_defaults()
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            self.view.show_error(str(e))
 
+    # ---------------- uniqueness checks ----------------
 
-    def check_exists(self,willaya_format,willaya_id):
+    def check_center_format(self, center_format: str, center_id: int) -> bool:
+        """True if free. The center code must not belong to another center."""
+        if not center_format:
+            return True
+        rows = self.code_format_repo.get_by_center_format(center_format)
+        return all(r.center_id == center_id for r in rows)
 
-        code_format = self.code_format_repo.get_by_willaya_format(willaya_format)
-        if  len(code_format )==0:
-            return
-        
-        if code_format[0].willaya_id == willaya_id:
-            return
-        self.view.on_willaya_format_error("le code willaya existe deja ...",)
+    def check_grade_format(self, grade_format: str, grade_id: int) -> bool:
+        if not grade_format:
+            return True
+        rows = self.code_format_repo.get_by_grade_format(grade_format)
+        return all(r.grade_id == grade_id for r in rows)
 
-    
-    
-    def create_code_format(self,
-        willaya_id: int,
+    # ---------------- save / delete ----------------
+
+    def save_code_format(
+        self,
+        center_id: int,
+        grade_id: int,
         subject_id: int,
-        willaya_format: str,
+        center_format: str,
+        grade_format: str,
         subject_format: str,
-        value_format: str
+        value_format: str,
     ):
         try:
-            subjects= self.subject_repo.get_all()
-            for subject in subjects: 
-                if subject.id == subject_id:
-                    new_code_format = self.code_format_repo.create(
-                        willaya_id,subject_id,
-                        willaya_format,subject_format,value_format
-                    )
-                else:
-                    new_code_format = self.code_format_repo.create(
-                        willaya_id,subject.id,
-                        willaya_format,"",""
-                    )
-                self.view.show_success(f"User created: {new_code_format.value_format}")
-                self.load_users()  # refresh the list
+            if not self.check_editable(center_id, grade_id, subject_id):
+                self.view.show_error("codes already generated, format is locked")
+                return
+            if not self.check_center_format(center_format, center_id):
+                self.view.show_error("le code center existe deja ...")
+                return
+            if not self.check_grade_format(grade_format, grade_id):
+                self.view.show_error("le code grade existe deja ...")
+                return
+
+            self.code_format_repo.save(
+                center_id, grade_id, subject_id,
+                center_format, grade_format, subject_format, value_format,
+            )
+            # center and grade formats are shared by all their rows
+            self.code_format_repo.set_center_format(center_id, center_format)
+            self.code_format_repo.set_grade_format(grade_id, grade_format)
+
+            self.session.commit()
+            self.view.show_success("format saved")
         except Exception as e:
-            print(e)
-            if str(e).startswith("CodeFormat already exists"):
-                print("update")
-                print(willaya_format)
+            self.session.rollback()
+            self.view.show_error(str(e))
 
-                code_format = self.code_format_repo.get_by_ids(willaya_id=willaya_id,subject_id=subject_id)
-                code_format.willaya_format=willaya_format
-                code_format.subject_format=subject_format
-                code_format.value_format=value_format
-                self.code_format_repo.update(codeformat=code_format)
-                
-
-            # self.view.show_error(str(e))
-
-    def update_code_format(
-            self, code_format: CodeFormatModel,
-            willaya_format:str,subject_format:str,value_format:str
-    ):
-        if subject_format is not None:
-            code_format.subject_format =  subject_format         
-
-        if willaya_format is not None:
-            code_format.willaya_format =  subject_format    
-
-        if value_format is not None:
-            code_format.value_format =  subject_format       
-
-        self.code_format_repo.update(code_format)
-
-    def delete_code_format(self, willaya_id: int,subject_id: int,):
-        self.code_format_repo.delete(willaya_id,subject_id)
-        self.load_code_formats()  
+    def delete_code_format(self, center_id: int, grade_id: int, subject_id: int):
+        try:
+            if not self.check_editable(center_id, grade_id, subject_id):
+                self.view.show_error("codes already generated, cannot delete")
+                return
+            self.code_format_repo.delete(center_id, grade_id, subject_id)
+            self.session.commit()
+        except Exception as e:
+            self.session.rollback()
+            self.view.show_error(str(e))

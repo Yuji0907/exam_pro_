@@ -1,296 +1,166 @@
+from typing import Optional
+
+from sqlalchemy import select
 from sqlalchemy.orm import Session
-from sqlalchemy import select, and_
 
 from database.orm_models import Code as CodeORM
-from database.orm_models import CodeFormat as CodeFormatORM
+from database.orm_models import Center as CenterORM
+from database.orm_models import Grade as GradeORM
+from database.orm_models import Subject as SubjectORM
 from models.code_model import CodeModel
 
 
 class CodeRepository:
+    """Repository methods only flush; the controller commits."""
 
     def __init__(self, session: Session):
         self.session = session
 
-    # --------------------------------------------------
-    # ORM -> Domain
-    # --------------------------------------------------
+    # ---------------- ORM -> Model ----------------
 
-    def _to_model(
-        self,
-        code: CodeORM
-    ) -> CodeModel:
-
+    def _to_model(self, code: CodeORM) -> CodeModel:
         return CodeModel(
             id=code.id,
-            file_number=code.file_number,
             code=code.code,
-            format_willaya_id=code.format_willaya_id,
+            format_center_id=code.format_center_id,
+            format_grade_id=code.format_grade_id,
             format_subject_id=code.format_subject_id,
-            packet_number=code.packet_number
+            reg_number=code.reg_number,
+            candidate_grade_id=code.candidate_grade_id,
+            packet_number=code.packet_number,
         )
 
-    # --------------------------------------------------
-    # Get all
-    # --------------------------------------------------
+    def get_by_id_orm(self, code_id: int) -> Optional[CodeORM]:
+        return self.session.get(CodeORM, code_id)
+
+    # ---------------- Read ----------------
 
     def get_all(self) -> list[CodeModel]:
+        rows = self.session.scalars(select(CodeORM)).all()
+        return [self._to_model(r) for r in rows]
 
-        codes = (
-            self.session
-            .query(CodeORM)
-            .all()
+    def get_by_id(self, code_id: int) -> Optional[CodeModel]:
+        code = self.get_by_id_orm(code_id)
+        return self._to_model(code) if code else None
+
+    def get_by_code(self, code: str) -> Optional[CodeModel]:
+        stmt = select(CodeORM).where(CodeORM.code == code)
+        result = self.session.scalars(stmt).first()
+        return self._to_model(result) if result else None
+
+    def get_by_candidate(self, reg_number: int, grade_id: int) -> list[CodeModel]:
+        stmt = select(CodeORM).where(
+            CodeORM.reg_number == reg_number,
+            CodeORM.candidate_grade_id == grade_id,
         )
+        return [self._to_model(r) for r in self.session.scalars(stmt).all()]
 
-        return [
-            self._to_model(code)
-            for code in codes
-        ]
-
-    # --------------------------------------------------
-    # Get by ID
-    # --------------------------------------------------
-
-    def get_by_id(
-        self,
-        code_id: int
-    ) -> CodeModel | None:
-
-        code = self.session.get(
-            CodeORM,
-            code_id
-        )
-
-        if code is None:
-            return None
-
-        return self._to_model(code)
-    
-    def get_by_id_orm(
-        self,
-        code_id: int
-    ) -> CodeORM :
-
-        code = self.session.get(
-            CodeORM,
-            code_id
-        )
-
-        if code is None:
-            return None
-
-        return code
-
-    # --------------------------------------------------
-    # Get by code string
-    # --------------------------------------------------
-
-    def get_by_code(
-        self,
-        code: str
-    ) -> CodeModel | None:
-
-        result = (
-            self.session
-            .query(CodeORM)
-            .filter(
-                CodeORM.code == code
-            )
-            .first()
-        )
-
-        if result is None:
-            return None
-
-        return self._to_model(result)
-
-    # --------------------------------------------------
-    # Get candidate codes
-    # --------------------------------------------------
-
-    def get_by_file_number(
-        self,
-        file_number: int
+    def get_by_format(
+        self, center_id: int, grade_id: int, subject_id: int
     ) -> list[CodeModel]:
-
-        codes = (
-            self.session
-            .query(CodeORM)
-            .filter(
-                CodeORM.file_number == file_number
-            )
-            .all()
+        """Replaces get_by_codeformat(): the format is now identified by ids."""
+        stmt = select(CodeORM).where(
+            CodeORM.format_center_id == center_id,
+            CodeORM.format_grade_id == grade_id,
+            CodeORM.format_subject_id == subject_id,
         )
+        return [self._to_model(r) for r in self.session.scalars(stmt).all()]
 
-        return [
-            self._to_model(code)
-            for code in codes
-        ]
+    def existing_codes(self, codes: list[str]) -> list[str]:
+        """Which of these code strings are already in the database."""
+        if not codes:
+            return []
+        stmt = select(CodeORM.code).where(CodeORM.code.in_(codes))
+        return list(self.session.scalars(stmt).all())
 
-    # --------------------------------------------------
-    # Create
-    # --------------------------------------------------
+    def get_format_labels(
+        self, center_id: int, grade_id: int, subject_id: int
+    ) -> tuple[str, str, str]:
+        """(center name, grade name, subject name), used for folder names."""
+        center = self.session.get(CenterORM, center_id)
+        grade = self.session.get(GradeORM, grade_id)
+        subject = self.session.get(SubjectORM, subject_id)
+        return center.name, grade.name, subject.subject
+
+    # ---------------- Create ----------------
 
     def create(
         self,
         code: str,
-        format_willaya_id: int,
+        format_center_id: int,
+        format_grade_id: int,
         format_subject_id: int,
-        file_number: int | None = None
     ) -> tuple[CodeModel, bool]:
-
         existing = self.get_by_code(code)
-
         if existing:
             return existing, True
 
         code_orm = CodeORM(
             code=code,
-            file_number=file_number,
-            format_willaya_id=format_willaya_id,
-            format_subject_id=format_subject_id
+            format_center_id=format_center_id,
+            format_grade_id=format_grade_id,
+            format_subject_id=format_subject_id,
         )
-
         self.session.add(code_orm)
-        self.session.commit()
-        self.session.refresh(code_orm)
-
+        self.session.flush()
         return self._to_model(code_orm), False
-
-    # --------------------------------------------------
-    # Get by code format 
-    # --------------------------------------------------
-    def get_by_codeformat(
-        self,
-        code_format: str
-    ) -> list[CodeModel]:
-        stmt = (
-            select(CodeORM)
-            .join(
-                CodeFormatORM,
-                and_(
-                    CodeFormatORM.willaya_id == CodeORM.format_willaya_id,
-                    CodeFormatORM.subject_id == CodeORM.format_subject_id
-                )
-            )
-            .where(
-                (
-                    CodeFormatORM.willaya_format
-                    + CodeFormatORM.subject_format
-                    + CodeFormatORM.value_format
-                ) == code_format
-            )
-        )
-
-        result = self.session.execute(stmt).scalars().all()
-        return result
-    # --------------------------------------------------
-    # Create multiple codes
-    # --------------------------------------------------
 
     def create_many(
         self,
         codes: list[str],
-        format_willaya_id: int,
-        format_subject_id: int
+        format_center_id: int,
+        format_grade_id: int,
+        format_subject_id: int,
     ) -> list[CodeModel]:
-
-        code_objects = [
+        objects = [
             CodeORM(
                 code=code,
-                file_number=None,
-                format_willaya_id=format_willaya_id,
-                format_subject_id=format_subject_id
+                format_center_id=format_center_id,
+                format_grade_id=format_grade_id,
+                format_subject_id=format_subject_id,
             )
             for code in codes
         ]
+        self.session.add_all(objects)
+        self.session.flush()  # populates the ids
+        return [self._to_model(o) for o in objects]
 
-        self.session.add_all(code_objects)
-
-        self.session.commit()
-
-        for code in code_objects:
-            self.session.refresh(code)
-
-        return [
-            self._to_model(code)
-            for code in code_objects
-        ]
-
-    # --------------------------------------------------
-    # Assign code to candidate
-    # --------------------------------------------------
+    # ---------------- Update ----------------
 
     def assign_to_candidate(
-        self,
-        code: str,
-        file_number: int
-    ) -> CodeModel | None:
-
-        code_orm = (
-            self.session
-            .query(CodeORM)
-            .filter(
-                CodeORM.code == code
-            )
-            .first()
-        )
-
+        self, code: str, reg_number: int, grade_id: int
+    ) -> Optional[CodeModel]:
+        stmt = select(CodeORM).where(CodeORM.code == code)
+        code_orm = self.session.scalars(stmt).first()
         if code_orm is None:
             return None
-
-        code_orm.file_number = file_number
-
-        self.session.commit()
-        self.session.refresh(code_orm)
-
+        code_orm.reg_number = reg_number
+        code_orm.candidate_grade_id = grade_id
+        self.session.flush()
         return self._to_model(code_orm)
 
-    
-    # --------------------------------------------------
-    # update
-    # --------------------------------------------------
-
-    def update(
-        self,code : CodeModel ) -> CodeModel:
-        orm_code = self.get_by_id_orm(code_id=code.id)
-        print("===================")
-        if not orm_code:
-            raise ValueError(
-                f"No code found for id={code.id}, "
-            )
+    def update(self, code: CodeModel) -> CodeModel:
+        orm_code = self.get_by_id_orm(code.id)
+        if orm_code is None:
+            raise ValueError(f"No code found for id={code.id}")
 
         orm_code.code = code.code
-        orm_code.file_number = code.file_number
+        orm_code.reg_number = code.reg_number
+        orm_code.candidate_grade_id = code.candidate_grade_id
+        orm_code.format_center_id = code.format_center_id
+        orm_code.format_grade_id = code.format_grade_id
         orm_code.format_subject_id = code.format_subject_id
-        orm_code.format_willaya_id = code.format_willaya_id
-        orm_code.packet_number = code._packet_number
-        
-        self.session.commit()
-        self.session.refresh(orm_code)
+        orm_code.packet_number = code.packet_number
+        self.session.flush()
         return self._to_model(orm_code)
-    
-    # --------------------------------------------------
-    # Delete
-    # --------------------------------------------------
 
-    def delete(
-        self,
-        code: str
-    ) -> bool:
+    # ---------------- Delete ----------------
 
-        code_orm = (
-            self.session
-            .query(CodeORM)
-            .filter(
-                CodeORM.code == code
-            )
-            .first()
-        )
-
+    def delete(self, code: str) -> bool:
+        stmt = select(CodeORM).where(CodeORM.code == code)
+        code_orm = self.session.scalars(stmt).first()
         if code_orm is None:
             return False
-
         self.session.delete(code_orm)
-        self.session.commit()
-
+        self.session.flush()
         return True

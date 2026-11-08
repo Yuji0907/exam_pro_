@@ -1,232 +1,189 @@
+from pathlib import Path
+
 from PyQt5.QtWidgets import (
-    QWidget,
-    QComboBox,
-    QPushButton,
-    QTableWidget,
-    QTableWidgetItem,
-    QVBoxLayout,
-    QHBoxLayout,
-    QLabel,
-    QHeaderView,
-    QAbstractItemView
+    QWidget, QComboBox, QPushButton, QTableWidget, QTableWidgetItem,
+    QVBoxLayout, QHBoxLayout, QLabel, QHeaderView, QAbstractItemView,
 )
 from sqlalchemy.orm import Session
+
 from controllers.code_format_controller import CodeFormatController
-from controllers.willaya_controller import WillayaController
-from controllers.subject_controller import SubjectController
-from models.willaya_model import WillayaModel
-from models.subject_model import SubjectModel 
-from models.code_format_model import CodeFormat  as CodeFormatModel
-from pathlib import Path
+from models.code_format_model import CodeFormat as CodeFormatModel
+
+COL_CENTER, COL_GRADE, COL_SUBJECT, COL_VALUE = range(4)
 
 
 class CodeFormat(QWidget):
-    def __init__(self,session:Session):
+    def __init__(self, session: Session):
         super().__init__()
-        self.wilaya_data:int =None
-        self.subject_data:int = None
+        self.grade_id = None
+        self.center_id = None
+        self.subject_id = None
+
+        self.grade_combo = QComboBox()
+        self.center_combo = QComboBox()
         self.subject_combo = QComboBox()
-        self.wilaya_combo = QComboBox()
-        self.table = QTableWidget(1, 3)
+        self.table = QTableWidget(1, 4)
         self.setWindowTitle("code format")
 
-        style_path = Path(__file__).parent.parent  / "styles" / "components.qss"
-        with open(style_path, "r") as file: 
-            style = file.read()
-            self.setStyleSheet(style)
-
+        style_path = Path(__file__).parent.parent / "styles" / "components.qss"
+        with open(style_path, "r") as file:
+            self.setStyleSheet(file.read())
         self.setObjectName("Container")
+        self.setFixedSize(650, 600)
 
+        self.controller = CodeFormatController(view=self, session=session)
+        self.controller.assign_default()
 
-
-        self.code_format_controller = CodeFormatController(view=self,session=session)
-        self.willaya_controller = WillayaController(view=self,session=session)
-        self.subject_controller = SubjectController(view=self,session=session)
-        # self.display_code_format()
-
-
-        self.code_format_controller.load_code_formats()
-        self.willaya_controller.load_willayas()
-        self.subject_controller.load_subjects()
-
-        self.setFixedSize(500,600)
-        layout = QVBoxLayout()
-
-
-        # Combos
-  
-        self.wilaya_combo.currentIndexChanged.connect(self.onWillayaChanged)
-        self.subject_combo.currentIndexChanged.connect(self.onSubjectChanged)
-        self.onSubjectChanged(0)
-
-        #message8
+        # Message
         self.message = QLabel("")
         self.message.setObjectName("W_error")
-        # self.message.setAlignment(Qt.AlignC)
-
         message_row = QHBoxLayout()
         message_row.addStretch()
         message_row.addWidget(self.message)
         message_row.addStretch()
 
         # Table
-        self.table.setHorizontalHeaderLabels([
-            "willaya",
-            "subject",
-            "Value"
-        ])
+        self.table.setHorizontalHeaderLabels(["center", "grade", "subject", "Value"])
         self.table.horizontalHeader().setSectionResizeMode(QHeaderView.Stretch)
         self.table.cellChanged.connect(self.on_cell_changed)
 
         # Button
-        self.print_button = QPushButton("asssign format")
-        self.print_button.setObjectName("Button")
-
-        self.print_button.clicked.connect(self.generate_code)
+        self.save_button = QPushButton("assign format")
+        self.save_button.setObjectName("Button")
+        self.save_button.clicked.connect(self.save_format)
 
         # Layout
         combo_layout = QHBoxLayout()
-        combo_layout.addWidget(QLabel("Wilaya"))
-        combo_layout.addWidget(self.wilaya_combo)
-
+        combo_layout.addWidget(QLabel("Grade"))
+        combo_layout.addWidget(self.grade_combo)
+        combo_layout.addWidget(QLabel("Center"))
+        combo_layout.addWidget(self.center_combo)
         combo_layout.addWidget(QLabel("Subject"))
         combo_layout.addWidget(self.subject_combo)
 
+        layout = QVBoxLayout()
         layout.addLayout(combo_layout)
         layout.addLayout(message_row)
         layout.addWidget(self.table)
-        layout.addWidget(self.print_button)
-        # layout.addStretch()
-
+        layout.addWidget(self.save_button)
         self.setLayout(layout)
+
+        # Connect combos after the first load to avoid half-filled reloads
+        self.controller.load_grades()
+        self.on_grade_changed(self.grade_combo.currentIndex())
+        self.grade_combo.currentIndexChanged.connect(self.on_grade_changed)
+        self.center_combo.currentIndexChanged.connect(self.reload_format)
+        self.subject_combo.currentIndexChanged.connect(self.reload_format)
+
+    # ---------------- combos ----------------
+
+    def _fill(self, combo: QComboBox, items):
+        combo.blockSignals(True)
+        combo.clear()
+        for item_id, label in items:
+            combo.addItem(label, item_id)
+        combo.blockSignals(False)
+
+    def load_grades(self, grades):
+        self._fill(self.grade_combo, grades)
+
+    def load_centers(self, centers):
+        self._fill(self.center_combo, centers)
+
+    def load_subjects(self, subjects):
+        self._fill(self.subject_combo, subjects)
+
+    def on_grade_changed(self, index):
+        self.grade_id = self.grade_combo.itemData(index)
+        if self.grade_id is None:
+            return
+        self.controller.load_centers(self.grade_id)
+        self.controller.load_subjects(self.grade_id)
+        self.reload_format()
+
+    def reload_format(self, _index=None):
+        self.clear_message()
+        self.cleartable()
+        self.center_id = self.center_combo.currentData()
+        self.subject_id = self.subject_combo.currentData()
+        if None in (self.grade_id, self.center_id, self.subject_id):
+            return
+        self.controller.load_code_format(self.center_id, self.grade_id, self.subject_id)
+
+    # ---------------- table ----------------
+
+    def cleartable(self):
+        self.table.blockSignals(True)
+        self.table.setRowCount(1)
+        self.table.clearContents()
+        self.table.blockSignals(False)
+
+    def _cell(self, column: int) -> str:
+        item = self.table.item(0, column)
+        return item.text().strip() if item is not None else ""
+
+    def on_cell_changed(self, row, column):
+        if row != 0 or column not in (COL_CENTER, COL_GRADE):
+            return
+        text = self._cell(column)
+        if column == COL_CENTER:
+            ok = self.controller.check_center_format(text, self.center_id)
+            error = "le code center existe deja ..."
+        else:
+            ok = self.controller.check_grade_format(text, self.grade_id)
+            error = "le code grade existe deja ..."
+        if not ok:
+            self.message.setText(error)
+            self.table.blockSignals(True)
+            self.table.item(0, column).setText("")
+            self.table.blockSignals(False)
+        else:
+            self.clear_message()
+
+    def display_code_format(self, code_format: CodeFormatModel):
+        self.table.blockSignals(True)
+        self.table.setRowCount(1)
+        self.table.clearContents()
+        self.table.setItem(0, COL_CENTER, QTableWidgetItem(code_format.center_format))
+        self.table.setItem(0, COL_GRADE, QTableWidgetItem(code_format.grade_format))
+        self.table.setItem(0, COL_SUBJECT, QTableWidgetItem(code_format.subject_format))
+        self.table.setItem(0, COL_VALUE, QTableWidgetItem(code_format.value_format))
+        self.table.blockSignals(False)
+        self.check_editable()
+
+    def check_editable(self):
+        if None in (self.center_id, self.grade_id, self.subject_id):
+            return
+        editable = self.controller.check_editable(
+            self.center_id, self.grade_id, self.subject_id
+        )
+        self.table.setEditTriggers(
+            QAbstractItemView.AllEditTriggers if editable
+            else QAbstractItemView.NoEditTriggers
+        )
+        self.save_button.setEnabled(editable)
+
+    # ---------------- actions ----------------
+
+    def save_format(self):
+        center_format = self._cell(COL_CENTER)
+        grade_format = self._cell(COL_GRADE)
+        if not center_format or not grade_format:
+            self.show_error("code format cellules vide !")
+            return
+        self.controller.save_code_format(
+            self.center_id, self.grade_id, self.subject_id,
+            center_format, grade_format,
+            self._cell(COL_SUBJECT), self._cell(COL_VALUE),
+        )
+
+    # ---------------- messages ----------------
 
     def clear_message(self):
         self.message.setText("")
 
-    def on_cell_changed(self,row,column):
-        print(row,column)
-        if not any((row,column)):
-            print("check..")
-            self.item = self.table.item(row,column)
-            if self.item is not None:
-                willaya = self.item.text()
-                print(willaya)
-                self.code_format_controller.check_exists(willaya_format=willaya,willaya_id=self.wilaya_data)
+    def show_error(self, error):
+        self.message.setText(str(error))
 
-
-    def on_willaya_format_error(self,message):
-        self.message.setText(str(message))
-        self.item.setText("")
-
-    def on_table_cell_error(self,message):
-        self.message.setText(str(message))
-
-
-    def load_willayas(self,willayas:list[WillayaModel]):
-        for willaya in willayas :    
-            print(type(willaya))
-            self.wilaya_combo.addItem(willaya.willaya,willaya.id)
-        self.wilaya_data= self.wilaya_combo.itemData(0)
-        
-    def load_subjects(self,subjects:list[SubjectModel]):
-        for subject in subjects :    
-            self.subject_combo.addItem(subject.subject,subject.id)
-        self.subject_data=self.subject_combo.itemData(0)
-
-
-
-    def get_table_items(self):
-        parts = []
-        for column in range(self.table.colorCount()):
-            for row in range(self.table.rowCount()):
-                if self.table.item(row, column) is not None:
-                    value = self.table.item(row, column).text()
-                    parts.append(value)
-        return parts
-
-    def generate_code(self):
-        parts  = self.get_table_items()
-
-        if(len(parts) <= 0):
-            self.on_table_cell_error("code format cellules vide !")
-            return
-        
-        self.code_format_controller.create_code_format(
-            self.wilaya_data,
-            self.subject_data,
-            parts[0], 
-            parts[1],
-            parts[2],
-            )
-        code = " ".join(parts)
-
-        print("Generated code:", code)
-
-
-
-    def cleartable(self,):
-        self.table.setRowCount(1)
-        self.table.clearContents()
-    def onSubjectChanged(self,index):
-        self.cleartable()
-        self.subject_data = self.subject_combo.itemData(index)
-        self.code_format_controller.load_code_format(self.wilaya_data,self.subject_data)
-
-    def onWillayaChanged(self,index):
-        self.cleartable()
-        self.wilaya_data = self.wilaya_combo.itemData(index)
-        self.code_format_controller.load_code_format(self.wilaya_data,self.subject_data)
-
-
-
-
-        
-
-
-    def check_editable(self):
-        parts = self.get_table_items()
-        print(parts)
-        if(len(parts) <= 0):
-            return
-        code = "".join(parts)
-        res= self.code_format_controller.check_editable(code)
-        if(len(res)>0):
-            self.table.setEditTriggers(QAbstractItemView.NoEditTriggers)
-        else:
-            self.table.setEditTriggers(QAbstractItemView.AllEditTriggers)
-
-
-
-
-    def display_code_formats(self,code_formats):
-        # self.code_format_controller.load_code_format()
-        pass
-
-    def display_code_format(self,code_format:CodeFormatModel):
-        self.table.setRowCount(0)
-        self.table.clearContents()
-        self.table.insertRow(0)
-        self.table.setItem(
-                    0,
-                    0,
-                    QTableWidgetItem(str(code_format._willaya_format))
-                )
-        self.table.setItem(
-                    0,
-                    1,
-                    QTableWidgetItem(str(code_format._subject_format))
-                )
-        self.table.setItem(
-                    0,
-                    2,
-                    QTableWidgetItem(str(code_format._value_format))
-                )
-        # print(code_format.willaya_format)
-        # print(code_format.subject_format)
-        # print(code_format.value_format)
-        self.check_editable()
-
-        pass
-    def show_error(self,error):
-        print(error)
-        pass
+    def show_success(self, text):
+        self.message.setText(str(text))

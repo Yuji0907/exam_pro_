@@ -1,174 +1,125 @@
+import os
+
 from sqlalchemy.orm import Session
+
 from utils.Barcode_gen import generate_barcode
 from repositories.code_repo import CodeRepository
 from repositories.code_format_repo import CodeFormatRepository
-from repositories.willaya_repo import WillayaRepository
-from repositories.subject_repo import SubjectRepository
-import os
+
 
 class CodeController:
-
-    def __init__(
-        self,
-        view,
-        session: Session
-    ):
+    def __init__(self, view, session: Session):
         self.view = view
-
+        self.session = session
         self.code_repo = CodeRepository(session)
-
         self.code_format_repo = CodeFormatRepository(session)
-        self.subject_repo = SubjectRepository(session)
-        self.willaya_repo = WillayaRepository(session)
 
-    # --------------------------------------------------
-    # Load codes
-    # --------------------------------------------------
+    # ---------------- combos ----------------
+
+    def load_grades(self):
+        self.view.load_grades(self.code_format_repo.get_grades())
+
+    def load_centers(self, grade_id: int):
+        self.view.load_centers(self.code_format_repo.get_centers_by_grade(grade_id))
+
+    def load_subjects(self, grade_id: int):
+        self.view.load_subjects(self.code_format_repo.get_subjects_by_grade(grade_id))
+
+    # ---------------- load ----------------
 
     def load_codes(self):
+        self.view.display_codes(self.code_repo.get_all())
 
-        codes = self.code_repo.get_all()
+    def load_candidate_codes(self, reg_number: int, grade_id: int):
+        self.view.display_codes(self.code_repo.get_by_candidate(reg_number, grade_id))
 
-        self.view.display_codes(
-            codes
-        )
-
-    # --------------------------------------------------
-    # Generate codes
-    # --------------------------------------------------
+    # ---------------- generate ----------------
 
     def generate_codes(
-        self,
-        willaya_id: int,
-        subject_id: int,
-        quantity: int
+        self, center_id: int, grade_id: int, subject_id: int, quantity: int
     ):
-
         if quantity <= 0:
-
-            self.view.show_error(
-                "Quantity must be greater than zero."
-            )
-
+            self.view.show_error("Quantity must be greater than zero.")
             return
 
-        # Get format
-        code_format = (
-            self.code_format_repo
-            .get_by_ids(
-                willaya_id,
-                subject_id
-            )
-        )
-        willaya = self.willaya_repo.get_by_id(willaya_id).willaya
-        subject = self.subject_repo.get_by_id(subject_id).subject
-        if code_format is None:
-
-            self.view.show_error(
-                "No code format exists for "
-                "this Wilaya and Subject."
-            )
-
-            return
-
-        # Starting value
-        start_string = code_format.value_format
-        print(start_string)
         try:
-            start = int(start_string)
-        except ValueError:
-            self.view.show_error(
-                f"Invalid starting value: "
-                f"{start_string}"
+            code_format = self.code_format_repo.get_by_ids(
+                center_id, grade_id, subject_id
             )
-            return
-        width = len(start_string)
-        generated_codes = []
-        temp_codes:str = f"temp\\{willaya}\\{subject}"
-        os.makedirs(temp_codes, exist_ok=True)
-        for i in range(quantity):
-            value = str(start + i).zfill(width)
-            code = (
-                f"{code_format.willaya_format}"
-                f"{code_format.subject_format}"
-                f"{value}"
-            )
-           
-            generate_barcode(code,f"{temp_codes}\\{value}")
-            generated_codes.append(code)
-        print(generated_codes)
-
-        # Save generated codes
-        try:
-            codes = self.code_repo.create_many(
-                codes=generated_codes,
-                format_willaya_id=willaya_id,
-                format_subject_id=subject_id
-            )
-
-            # Update next starting value
-            next_value = start + quantity
-            print(next_value)
-
-            code_format.value_format = (
-                str(next_value).zfill(width)
-            )
-
-            self.code_format_repo.update(
-                code_format
-            )
-
-            self.view.display_codes(
-                codes
-            )
-
-        except Exception as e:
-
-            self.view.show_error(
-                str(e)
-            )
-
-    # --------------------------------------------------
-    # Assign code
-    # --------------------------------------------------
-
-    def assign_code(self,code: str,file_number: int ):
-        try:
-            result = (
-                self.code_repo.assign_to_candidate(code,file_number)
-            )
-
-            if result is None:
+            if code_format is None:
                 self.view.show_error(
-                    "Code not found."
+                    "No code format exists for this center, grade and subject."
                 )
                 return
-            
-            self.view.show_success(f"Code {code} assigned "f"to candidate {file_number}." )
-        except Exception as e:
-            print(str(e) )
 
+            start_string = code_format.value_format
+            try:
+                start = int(start_string)
+            except ValueError:
+                self.view.show_error(f"Invalid starting value: {start_string}")
+                return
 
-
-
-
-    
-    # --------------------------------------------------
-    # Load candidate codes
-    # --------------------------------------------------
-
-    def load_candidate_codes(
-        self,
-        file_number: int
-    ):
-
-        codes = (
-            self.code_repo
-            .get_by_file_number(
-                file_number
+            width = len(start_string)
+            prefix = (
+                f"{code_format.center_format}"
+                f"{code_format.grade_format}"
+                f"{code_format.subject_format}"
             )
-        )
+            values = [str(start + i).zfill(width) for i in range(quantity)]
+            generated = [prefix + v for v in values]
 
-        self.view.display_codes(
-            codes
-        )
+            duplicates = self.code_repo.existing_codes(generated)
+            if duplicates:
+                self.view.show_error(
+                    f"{len(duplicates)} codes already exist (first: {duplicates[0]})."
+                )
+                return
+
+            # save the codes and move the format's counter to the next value
+            codes = self.code_repo.create_many(
+                generated, center_id, grade_id, subject_id
+            )
+            self.code_format_repo.save(
+                center_id, grade_id, subject_id,
+                code_format.center_format,
+                code_format.grade_format,
+                code_format.subject_format,
+                str(start + quantity).zfill(width),
+            )
+
+            # barcodes: if this fails, the database changes are rolled back
+            center_name, grade_name, subject_name = self.code_repo.get_format_labels(
+                center_id, grade_id, subject_id
+            )
+            folder = os.path.join("temp")
+            os.makedirs(folder, exist_ok=True)
+            for code, value in zip(generated, values):
+                generate_barcode(code, os.path.join(folder, value))
+
+            self.session.commit()
+            self.view.display_codes(codes)
+
+        except Exception as e:
+            self.session.rollback()
+            self.view.show_error(str(e))
+
+    # ---------------- assign ----------------
+
+    def assign_code(self, code: str, reg_number: int, grade_id: int):
+        try:
+            existing = self.code_repo.get_by_code(code)
+            if existing is None:
+                self.view.show_error("Code not found.")
+                return
+            if existing.reg_number is not None:
+                self.view.show_error("Code already assigned to a candidate.")
+                return
+
+            self.code_repo.assign_to_candidate(code, reg_number, grade_id)
+            self.session.commit()
+            self.view.show_success(
+                f"Code {code} assigned to candidate {reg_number}."
+            )
+        except Exception as e:
+            self.session.rollback()
+            self.view.show_error(str(e))

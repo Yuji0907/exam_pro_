@@ -13,6 +13,8 @@ class GradeController:
  
     def load_grades(self):
         grades = self.grade_repo.get_all()
+        print("grades========")
+        print(grades)
         self.view.load_grades(grades)
  
     def get_grades(self):
@@ -36,7 +38,7 @@ class GradeController:
                 self.view.show_error("Grade name cannot be empty.")
                 return
  
-            grade, already_exists = self.grade_repo.create(name)
+            grade, already_exists = self.grade_repo.add(name)
  
             if already_exists:
                 self.view.show_error(
@@ -46,14 +48,13 @@ class GradeController:
  
             self.session.commit()
  
-            self.view.show_success(
-                f"Grade created: {grade.name}"
-            )
+
  
             self.load_grades()
  
         except Exception as e:
             self.session.rollback()
+            # raise(e)
             self.view.show_error(str(e))
  
     def update_grade(

@@ -20,7 +20,7 @@ class CenterModel(QObject):
             self._name = value
             self.name_changed.emit(value)
  
- 
+
 class CenterAssignmentModel(QObject):
  
     center_id_changed = pyqtSignal(int)

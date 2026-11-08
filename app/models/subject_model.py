@@ -8,10 +8,13 @@ class SubjectModel(QObject):
 
     def __init__(self, id=None, subject="", coeff=0):
         super().__init__()
-        self.id = id
+        self._id = id
         self._subject = subject
         self._coeff = coeff
 
+    @property
+    def id(self):
+        return self._id
     @property
     def subject(self):
         return self._subject
